@@ -3,7 +3,7 @@ export const steps = [
     number: '01',
     title: 'Hand over the list',
     description:
-      'Give your agent a cids.txt, or paste a list here first to see what you are dealing with. Checking costs nothing.',
+      'Paste a list here to see what you are dealing with, or let your agent pull it straight from your pinning service, whose dashboard and API list every pinned CID. Checking costs nothing.',
   },
   {
     number: '02',
@@ -15,7 +15,7 @@ export const steps = [
     number: '03',
     title: 'Fund it, once',
     description:
-      'Connect a wallet, deposit USDFC, approve spending. Use a wallet you keep for this and deposit what the migration needs, because that amount is also the most anything can spend.',
+      'Deposit USDFC and approve spending, from a wallet you keep for this migration. Deposit what the run needs, because that amount is also the most anything can spend.',
   },
   {
     number: '04',

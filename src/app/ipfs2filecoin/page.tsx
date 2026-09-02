@@ -16,7 +16,6 @@ import { Navigation } from '@/components/Navigation/Navigation'
 import { StructuredDataScript } from '@/components/StructuredDataScript'
 
 import { PATHS } from '@/constants/paths'
-import { FOC_URLS } from '@/constants/site-metadata'
 import { createMetadata } from '@/utils/create-metadata'
 
 import { AgentPrompt } from './components/AgentPrompt'
@@ -79,13 +78,42 @@ export default function IpfsToFilecoin() {
             title="Move your pinned IPFS data to Filecoin"
             description="Same CIDs, a fraction of what pinning services charge, and an onchain receipt you can verify yourself."
           />
-          <div className="mt-10">
-            <CidListChecker />
+          {/*
+            The agent prompt is the page's terminal state, so it leads. The
+            checker moved beside the estimator: paste and estimate are one
+            interaction, and this link is the path down to it.
+          */}
+          <div className="mx-auto mt-10 max-w-2xl space-y-4">
+            <p className="text-center text-(--color-paragraph-text)">
+              Give this line to Claude Code, Cursor, or any coding agent. It
+              reads the runbook, works through your list, and reports back what
+              landed. The first thing it will ask you for is the list of CIDs to
+              migrate, so have one ready or{' '}
+              <SmartTextLink href="#check">
+                paste yours into the checker
+              </SmartTextLink>{' '}
+              and copy the prompt it builds with your CIDs already in it.
+            </p>
+            <AgentPrompt source="hero" />
+            <p className="text-center text-(--color-paragraph-text) text-sm/relaxed">
+              It signs from a key you provide and can spend up to your deposit,
+              so use a wallet kept for this migration and nothing else.
+            </p>
           </div>
         </PageSection>
       </div>
 
       <PageSection backgroundVariant="gray">
+        <SectionContent
+          headingTag="h2"
+          title="How it works"
+          description="Four steps, and the first two are free."
+        >
+          <StepList steps={steps} />
+        </SectionContent>
+      </PageSection>
+
+      <PageSection backgroundVariant="light">
         <SectionContent
           headingTag="h2"
           title="Why move to Filecoin warm storage"
@@ -110,7 +138,7 @@ export default function IpfsToFilecoin() {
         </SectionContent>
       </PageSection>
 
-      <PageSection backgroundVariant="light">
+      <PageSection backgroundVariant="gray">
         <SectionContent
           headingTag="h2"
           title="What it costs"
@@ -123,6 +151,10 @@ export default function IpfsToFilecoin() {
             costs"; stacked below that, where a 2fr/1fr split leaves the table
             too narrow to hold its columns.
           */}
+          <div id="check" className="mx-auto mb-12 max-w-2xl scroll-mt-24">
+            <CidListChecker />
+          </div>
+
           <div className="grid gap-8 lg:grid-cols-3 lg:items-start">
             <div className="space-y-6 lg:col-span-2">
               <ComparisonTable />
@@ -166,16 +198,6 @@ export default function IpfsToFilecoin() {
               </div>
             </div>
           </div>
-        </SectionContent>
-      </PageSection>
-
-      <PageSection backgroundVariant="gray">
-        <SectionContent
-          headingTag="h2"
-          title="How it works"
-          description="Four steps, and the first two are free."
-        >
-          <StepList steps={steps} />
         </SectionContent>
       </PageSection>
 
@@ -237,8 +259,8 @@ export default function IpfsToFilecoin() {
                 Talk to us
               </Heading>
               <p className="text-(--color-paragraph-text)">
-                For sources that are not reachable from a public gateway, or to
-                agree capacity and timing before a run over{' '}
+                For sources that are not reachable from the public IPFS network,
+                or to agree capacity and timing before a run over{' '}
                 {COORDINATION_VOLUME_LABEL}. That is coordination, not a
                 ceiling: the agent path has no cap on how many CIDs it migrates.
               </p>
@@ -294,12 +316,8 @@ export default function IpfsToFilecoin() {
           title="Find out what your archive costs before you move it"
           description="Checking is free and needs nothing but a list. You get a real number and the one line that hands the job to your agent."
           cta={[
-            <Button
-              key="read-the-brief"
-              href={FOC_URLS.documentation.gettingStarted}
-              variant="primary"
-            >
-              Read the docs
+            <Button key="check-my-list" href="#check" variant="primary">
+              Check my list free
             </Button>,
             <Button
               key="talk-to-us"
@@ -327,8 +345,8 @@ export const metadata: Metadata = {
   alternates: {
     ...baseMetadata.alternates,
     /**
-     * So an agent pointed at the human URL discovers the migration brief
-     * without being told the llms.txt convention.
+     * So an agent pointed at the human URL discovers the runbook without
+     * being told where it lives.
      */
     types: { 'text/markdown': RUNBOOK_PATH },
   },

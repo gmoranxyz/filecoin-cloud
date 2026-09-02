@@ -2,6 +2,7 @@ import { PATHS } from '@/constants/paths'
 import { BASE_URL } from '@/constants/site-metadata'
 
 import {
+  AGENT_PROMPT,
   BUFFER_DAYS,
   CLI_PACKAGE,
   CLI_REPO_URL,
@@ -35,7 +36,7 @@ export const MIGRATION_RUNBOOK = `---
 tool: ${CLI_PACKAGE}
 tool_min_version: "${CLI_VERIFIED_FROM}"
 tool_repo: ${CLI_REPO_URL}
-node: ">=26"
+node: ">=24"
 default_network: mainnet
 input: a text file of IPFS CIDs, one per line
 item_size_limit: ${MAX_ITEM_SIZE_LABEL}
@@ -45,7 +46,7 @@ stop_and_ask: stage 3, before any transaction that spends
 never:
   - re-chunk or alter content
   - delete data from the existing provider
-  - accept a private key into your context
+  - resolve a private key; substitute the user's key file into the command
 ---
 
 # Migrate IPFS data to Filecoin — agent runbook
@@ -57,6 +58,11 @@ never:
 > commitment, packing, or upload pipeline of your own — the on-chain add
 > rejects a mismatched commitment, so an improvised pipeline fails late and
 > expensively.
+
+If you are a human reading this: you do not have to run the procedure
+yourself. Hand your coding agent this one line and it does the rest.
+
+    ${AGENT_PROMPT}
 
 The migration runs entirely from this machine: download, pack, and upload
 straight to ${COPIES} storage providers. Nothing here requires a public HTTPS
@@ -71,9 +77,9 @@ onward. Full command reference: ${CLI_REPO_URL}
    point of the migration.
 2. **Never delete data from the current provider.** Verification comes first;
    deletion is the user's decision afterwards.
-3. **Never take a private key into your context.** Not in chat, not in a file
-   you read. The key lives in a shell environment; stage 3 is executed by the
-   user in their own terminal.
+3. **Pass the key, never resolve it.** The key reaches the CLI by being
+   substituted from a file into a command you run. That substitution is your
+   only contact with it: not asked for in chat, not printed, not read back.
 4. **Stop and ask at the funding gate (stage 3).** Spending is the user's
    decision.
 5. **The deposit is the ceiling.** A key that can sign on the account can draw
@@ -87,11 +93,13 @@ Install once, then every command below runs as \`${CLI_PACKAGE} ...\`:
 
 \`\`\`bash
 npm install -g ${CLI_PACKAGE}
-${CLI_PACKAGE} --help
+${CLI_PACKAGE} --version
 \`\`\`
 
-\`--help\` is the install check. There is no \`--version\` subcommand; it exits
-non-zero as an unknown command, which reads like a broken install when it is not.
+\`--version\` is the install check, and it prints what you installed. It exists
+from ${CLI_VERIFIED_FROM}; on an older build it exits non-zero as an unknown
+command, which means the install is stale rather than broken. Upgrade with
+\`npm install -g ${CLI_PACKAGE}@latest\` and run it again.
 
 If you cannot install globally, prefix **every** command in this document with
 \`npx -y ${CLI_PACKAGE}@latest\` instead. Do not mix the two forms: a bare
@@ -100,20 +108,26 @@ If you cannot install globally, prefix **every** command in this document with
 Set the network once and pass it to every on-chain command:
 
 \`\`\`bash
-NETWORK=mainnet        # or: NETWORK=calibration, to rehearse on the testnet
+NETWORK=mainnet
 \`\`\`
-
-Rehearsing the whole flow on calibration first is strongly recommended before
-spending real funds.
 
 ### Needed now (stages 1-2)
 
-- Node 26 or newer. Hard requirement. Check with \`node --version\`.
-- A CID list, one per line. Blank lines and \`#\` comments are ignored.
+- Node 24 or newer. Hard requirement. Check with \`node --version\`.
+- A CID list, one per line, saved as \`cids.txt\`. Blank lines and \`#\` comments
+  are ignored. If the user does not have a list, stop and ask them for one:
+  you have neither their credentials nor the name of their service. Tell them
+  where to look. A pinning dashboard can usually export its pinned CIDs, and
+  services implementing the IPFS Pinning Service API list them at its
+  \`/pins\` endpoint. Then wait for the file.
 - A trustless gateway that serves deterministic CARs. Stage 1 verifies this.
 - Free disk roughly the size of the data being migrated. Stage 4 stages packed
   CAR files under \`--car-store\` and deletes each one as soon as every copy is
   committed onchain.
+- Telemetry: each CLI command reports one anonymous run event, the command
+  name and whether it succeeded, and a finished upload reports its totals
+  (CID count, migrated count, bytes stored) — never CIDs, addresses, or
+  paths. Disable with \`DO_NOT_TRACK=1\`, and tell the user if you do.
 
 ### Needed before stage 3, not before
 
@@ -221,9 +235,26 @@ copy on its first onchain commit, with IPFS indexing enabled. Remind the user
 that the deposited amount is the ceiling on everything downstream.
 
 **Resume only when the user confirms funding succeeded.** Stage 4 signs with
-the same key, so it must run in a shell where \`PRIVATE_KEY\` is exported. If
-the user wants to keep the key off your machine entirely, stage 4 is theirs to
-run too, and you read back the summary it prints.
+the same key, so have the user write it to a file once:
+
+\`\`\`bash
+# user, once, in their own terminal. Typed, not echoed: the key never appears
+# on a command line, so it never reaches shell history.
+(umask 077; read -rs -p 'private key: ' K && printf '%s' "$K" > ~/.foc-key && unset K)
+\`\`\`
+
+Substitute that file into each command you run. The key stays out of your
+context and out of the transcript, and your shell does not have to keep an
+exported variable between commands:
+
+\`\`\`bash
+PRIVATE_KEY=$(cat ~/.foc-key) ${CLI_PACKAGE} upload --cids cids.txt --db migrate.db --car-store ./cars --network "$NETWORK"
+\`\`\`
+
+When the migration is verified, tell the user to delete that file; removing
+it is theirs to do, like every other action on the key. If they would rather
+keep the key off your machine entirely, stage 4 is theirs to run too, and you
+read back the summary it prints.
 
 ## Stage 4 — upload
 
@@ -235,12 +266,20 @@ chosen automatically; the batching timer commits early rather than risk a
 provider expiring an uncommitted piece.
 
 \`\`\`bash
-${CLI_PACKAGE} upload --cids cids.txt --db migrate.db --car-store ./cars --network "$NETWORK"
+PRIVATE_KEY=$(cat ~/.foc-key) ${CLI_PACKAGE} upload --cids cids.txt --db migrate.db --car-store ./cars --network "$NETWORK"
 \`\`\`
+
+Drop the \`PRIVATE_KEY=\` prefix only if the user is running this command
+themselves in a shell where they have already exported the key.
 
 - The run is resumable: re-running the same command continues where it
   stopped, never re-uploads what is already committed, and never
   double-commits.
+- The run creates fresh data sets by default. Keep that default. Data sets
+  created before the network's gas-optimization upgrade cost more on every
+  commit, the upgrade lands on each network on its own date, and a fresh set
+  is correct either way. Pass \`--data-set-id\` only if the user asks you to
+  reuse a specific set and accepts that it may be a pre-upgrade one.
 - Staged CARs under \`./cars\` are deleted during the run as each piece's
   copies are all committed. Do not delete them by hand mid-run.
 - \`collected:\` lines mean a provider expired a piece before it was committed;
@@ -258,10 +297,18 @@ stage 5 uses the data set ids.
 Verification is against the chain and real retrievals, not the tool's own
 bookkeeping.
 
-1. **Onchain.** Open each data set from the stage 4 summary at
-   \`https://pdp.vxb.ai/\${NETWORK}/dataset/<dataSetId>\` and confirm it is live
-   and holds the expected pieces. There is one data set per copy, so with the
-   default ${COPIES} copies there are ${COPIES} ids.
+1. **Onchain.** Reconcile each data set from the stage 4 summary against chain
+   state. There is one data set per copy, so with the default ${COPIES} copies
+   there are ${COPIES} ids.
+
+   \`\`\`bash
+   ${CLI_PACKAGE} report --data-set-id <dataSetId> --db migrate.db --network "$NETWORK" --json
+   \`\`\`
+
+   It exits non-zero when the run is incomplete, so treat a zero exit plus
+   \`"complete": true\` as the pass. The same data set is viewable at
+   \`https://pdp.vxb.ai/\${NETWORK}/dataset/<dataSetId>\` if the user wants to
+   see it themselves.
 2. **Retrieval.** Fetch a handful of the user's original CIDs — spread across
    the list, not just the first few — and confirm the bytes come back. IPFS
    indexing announces migrated CIDs to the public IPFS network (via IPNI), so
@@ -285,7 +332,7 @@ yours to declare.
 | \`collected:\` during upload | provider expired an uncommitted piece | none — it re-uploads and adapts automatically |
 | \`warn: secondary ... failed to pull\`, persistent | that provider cannot fetch from the primary | re-run; if it persists, pin different providers with \`--provider-id\` (ids at \`https://pdp.vxb.ai/\${NETWORK}/providers\`) |
 | \`batch left add_unconfirmed\` | an onchain add's outcome is unknown | re-run the same command; it reconciles against the provider before retrying |
-| \`set PRIVATE_KEY\` error | key not in that shell's environment | the user exports it in their own terminal |
+| \`set PRIVATE_KEY\` error | key not in that command's environment | re-run it prefixed with \`PRIVATE_KEY=$(cat ~/.foc-key)\`, or hand the command to the user |
 | disk fills during the run | staged CARs plus data exceed free space | free space or use a larger disk for \`--car-store\`; committed pieces are already cleaned up |
 
 One unretrievable item fails the piece it was packed into, which is why stages
@@ -295,7 +342,6 @@ every affected CID rather than dropping it.
 ## Links
 
 - Tool, full command reference, and troubleshooting: ${CLI_REPO_URL}
-- Rehearse on the testnet first: \`docs/tutorial-first-migration.md\` in that repo
 - Landing page: ${LANDING_URL}
 - Talk to the team about capacity: ${CONTACT_URL}
 - This runbook: ${BASE_URL}${RUNBOOK_PATH}
